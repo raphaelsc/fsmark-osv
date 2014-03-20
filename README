@@ -6,7 +6,7 @@ How to use fsmark-osv in OSv
 2) Inside OSv directory, clone fsmark-osv.
 3) Then apply the patch from fsmark-osv into OSv tree:
 patch -p1 < fsmark-osv/fs_mark.patch 
-4) Build OSv as the OSv readme explains.
+4) Build OSv as the README file inside OSv directory explains.
 5) Run fsmark-osv by using the following example command:
 sudo ./scripts/run.py -e 'fs_mark.so -v -d /fsmark_testdir -s 10240 -n 100'
 
