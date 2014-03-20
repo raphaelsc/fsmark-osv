@@ -1,0 +1,33 @@
+From 92b46243fcfd2bd3a15f8b413e47e97da182ce59 Mon Sep 17 00:00:00 2001
+From: "Raphael S. Carvalho" <raphaelsc@cloudius-systems.com>
+Date: Thu, 20 Mar 2014 04:41:20 +0200
+Subject: [PATCH] Change build.mk to build fs_mark
+
+Signed-off-by: Raphael S. Carvalho <raphaelsc@cloudius-systems.com>
+---
+ build.mk | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/build.mk b/build.mk
+index aa59a8d..d7e389e 100644
+--- a/build.mk
++++ b/build.mk
+@@ -295,6 +295,7 @@ include $(src)/bsd/cddl/contrib/opensolaris/lib/libuutil/common/build.mk
+ include $(src)/bsd/cddl/contrib/opensolaris/lib/libzfs/common/build.mk
+ include $(src)/bsd/cddl/contrib/opensolaris/cmd/zpool/build.mk
+ include $(src)/bsd/cddl/contrib/opensolaris/cmd/zfs/build.mk
++include $(src)/fsmark-osv/build.mk
+
+ bsd  = bsd/net.o
+ bsd += bsd/$(arch)/machine/in_cksum.o
+@@ -736,7 +737,7 @@ $(jni): INCLUDES += -I /usr/lib/jvm/java/include -I /usr/lib/jvm/java/include/li
+
+ bootfs.bin: scripts/mkbootfs.py $(java-targets) $(out)/bootfs.manifest $(tests) $(java_tests) $(tools) \
+                tests/testrunner.so \
+-               zpool.so zfs.so
++               zpool.so zfs.so fs_mark.so
+        $(call quiet, $(src)/scripts/mkbootfs.py -o $@ -d $@.d -m $(out)/bootfs.manifest \
+                -D jdkbase=$(jdkbase) -D gccbase=$(gccbase) -D \
+                glibcbase=$(glibcbase) -D miscbase=$(miscbase), MKBOOTFS $@)
+--
+1.8.5.3
