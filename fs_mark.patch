@@ -1,13 +1,23 @@
-From 92b46243fcfd2bd3a15f8b413e47e97da182ce59 Mon Sep 17 00:00:00 2001
+From eed0658fd6f7153832c31539af54dd961e5324d9 Mon Sep 17 00:00:00 2001
 From: "Raphael S. Carvalho" <raphaelsc@cloudius-systems.com>
-Date: Thu, 20 Mar 2014 04:41:20 +0200
-Subject: [PATCH] Change build.mk to build fs_mark
+Date: Thu, 20 Mar 2014 05:53:28 +0200
+Subject: [PATCH] Add fs_mark into the OSv build process
 
 Signed-off-by: Raphael S. Carvalho <raphaelsc@cloudius-systems.com>
 ---
- build.mk | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)
+ bootfs.manifest.skel | 1 +
+ build.mk             | 3 ++-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
 
+diff --git a/bootfs.manifest.skel b/bootfs.manifest.skel
+index 9816e92..53cf559 100644
+--- a/bootfs.manifest.skel
++++ b/bootfs.manifest.skel
+@@ -5,3 +5,4 @@
+ /zfs.so: zfs.so
+ /tools/mkfs.so: tools/mkfs/mkfs.so
+ /tools/cpiod.so: tools/cpiod/cpiod.so
++/fs_mark.so: fs_mark.so
 diff --git a/build.mk b/build.mk
 index aa59a8d..d7e389e 100644
 --- a/build.mk
