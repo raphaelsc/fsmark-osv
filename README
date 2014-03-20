@@ -1,4 +1,4 @@
-Why OSv need a tailored version of fsmark?
+Why OSv needs a tailored version of fsmark?
 =====
 OSv was designed to run a single process, and that means a single address
 space. The problem is that fsmark uses fork when kicking off tasks, and given
