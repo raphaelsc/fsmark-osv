@@ -1,3 +1,4 @@
+# OSv-specific build file to compile fsmark inside the tree.
 
 fsmark-cmd-file-list = fs_mark lib_timing
 
