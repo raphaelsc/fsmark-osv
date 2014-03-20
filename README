@@ -1,4 +1,4 @@
-Beware: I wasn't able to compile it on a 32-bit 4.4.5-8 Debian Linux using gcc version 4.45.
+Beware: I wasn't able to compile fsmark-osv on a 32-bit 4.4.5-8 Debian Linux using gcc version 4.45.
 
 Why OSv needs a tailored version of fsmark?
 =====
