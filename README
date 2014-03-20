@@ -10,7 +10,6 @@ patch -p1 < fsmark-osv/fs_mark.patch
 5) Run fsmark-osv by using the following command:
 sudo ./scripts/run.py -e 'fs_mark.so -v -d /fsmark_testdir -s 10240 -n 100'
 
-
 Why OSv needs a tailored version of fsmark?
 =====
 OSv was designed to run a single process, and that means a single address
