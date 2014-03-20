@@ -1,8 +1,8 @@
 # OSv-specific build file to compile fsmark inside the tree.
 
-fsmark-cmd-file-list = fs_mark lib_timing
+fsmark-cmd-file-list = fs_mark lib_timing gettid_wrapper
 
-fsmark-cmd-objects = $(foreach x, $(fsmark-cmd-file-list), fs_mark-3.3/$x.o)
+fsmark-cmd-objects = $(foreach x, $(fsmark-cmd-file-list), fs_mark-osv/$x.o)
 
 cflags-fsmark-cmd-includes =
 
