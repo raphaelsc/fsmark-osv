@@ -2,7 +2,7 @@
 
 fsmark-cmd-file-list = fs_mark lib_timing gettid_wrapper
 
-fsmark-cmd-objects = $(foreach x, $(fsmark-cmd-file-list), fs_mark-osv/$x.o)
+fsmark-cmd-objects = $(foreach x, $(fsmark-cmd-file-list), fsmark-osv/$x.o)
 
 cflags-fsmark-cmd-includes =
 
