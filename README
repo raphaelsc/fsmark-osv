@@ -1,4 +1,17 @@
 #
+# Why OSv need a tailored version of fsmark?
+# OSv was designed to run a single process, and that means a single address space. 
+# The problem is that fsmark uses fork when kicking off tasks, and given the OSv 
+# design decision mentioned above, fork semantics cannot be properly implemented. 
+# To get fsmark running properly in OSv, the code would have to be changed to use 
+# threads instead. Here borns fsmark-osv! 
+
+# Copyright (C) 2014 Cloudius Systems
+# Raphael S. Carvalho <raphaelsc@cloudius-systems.com>:
+# Change fs_mark to use threads instead.
+#
+
+#
 # Copyright (C) 2003-2004 EMC Corporation
 #
 # fs_mark: Benchmark synchronous/async file creation
@@ -18,12 +31,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-#
-
-#
-# Copyright (C) 2014 Cloudius Systems
-# Raphael S. Carvalho <raphaelsc@cloudius-systems.com>:
-# Change fs_mark to use threads instead.
 #
 
 FS_MARK
