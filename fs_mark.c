@@ -547,6 +547,7 @@ void write_file(child_job_t *child_task,
 	int sz_left;
 	int write_size, write_calls;
 	unsigned long long local_write_usec, delta;
+	struct timeval start_tv, stop_tv;
 
 	write_calls = 0;
 	write_size = io_buffer_size;
@@ -557,14 +558,14 @@ void write_file(child_job_t *child_task,
 		if (write_size > sz_left)
 			write_size = sz_left;
 
-		start(0);
+		start(&start_tv);
 		if ((ret = write(fd, child_task->io_buffer, write_size)) != write_size) {
 			fprintf(stderr,
 				"fs_mark: write_file write failed: %d %s\n",
 				ret, strerror(errno));
 			cleanup_exit();
 		}
-		delta = stop(0, 0);
+		delta = stop(&start_tv, &stop_tv);
 
 		local_write_usec += delta;
 
@@ -615,10 +616,11 @@ static void check_space(long my_tid)
  * Each of the subcomponents is measured separately so we can track how specific aspects 
  * degrade.
  */
-static __thread struct timeval loop_start_tv, loop_stop_tv;
 
 void do_run(child_job_t *child_task)
 {
+	struct timeval loop_start_tv, loop_stop_tv;
+	struct timeval start_tv, stop_tv;
 	struct name_entry *names = NULL;
 	long my_tid = child_task->child_tid;
 	int file_index, fd;
@@ -681,7 +683,7 @@ void do_run(child_job_t *child_task)
 		sprintf(file_target_name, "%s/%s", names[file_index].target_dir,
 			names[file_index].f_name);
 
-		start(0);
+		start(&start_tv);
 		if ((fd =
 		     open(file_write_name, O_CREAT | O_RDWR | O_TRUNC,
 			  0666)) == -1) {
@@ -689,7 +691,7 @@ void do_run(child_job_t *child_task)
 				strerror(errno));
 			cleanup_exit();
 		}
-		delta = stop(0, 0);
+		delta = stop(&start_tv, &stop_tv);
 		creat_usec += delta;
 
 		if (delta > max_creat_usec)
@@ -714,14 +716,14 @@ void do_run(child_job_t *child_task)
 		 * this actually flushed the IDE write cache as well.
 		 */
 		if (sync_method & FSYNC_BEFORE_CLOSE) {
-			start(0);
+			start(&start_tv);
 
 			if (fsync(fd) == -1) {
 				fprintf(stderr, "fs_mark: fsync failed %s\n",
 					strerror(errno));
 				cleanup_exit();
 			}
-			delta = stop(0, 0);
+			delta = stop(&start_tv, &stop_tv);
 			fsync_usec += delta;
 
 			if (delta > max_fsync_usec)
@@ -733,9 +735,9 @@ void do_run(child_job_t *child_task)
 		/*
 		 * Time the file close
 		 */
-		start(0);
+		start(&start_tv);
 		close(fd);
-		delta = stop(0, 0);
+		delta = stop(&start_tv, &stop_tv);
 
 		close_usec += delta;
 		if (delta > max_close_usec)
@@ -748,9 +750,9 @@ void do_run(child_job_t *child_task)
 	assert(names);
 
 	if (sync_method & FSYNC_SYNC_SYSCALL) {
-		start(0);
+		start(&start_tv);
 		sync();
-		delta = stop(0, 0);
+		delta = stop(&start_tv, &stop_tv);
 
 		/*
 		 * Add the time spent in sync() to the total cost of fsync()
@@ -771,7 +773,7 @@ void do_run(child_job_t *child_task)
 				names[file_index].target_dir,
 				names[file_index].f_name);
 
-			start(0);
+			start(&start_tv);
 			if ((fd = open(file_target_name, O_RDONLY, 0666)) == -1) {
 				fprintf(stderr, "Error in open of %s : %s\n",
 					file_target_name, strerror(errno));
@@ -785,7 +787,7 @@ void do_run(child_job_t *child_task)
 			}
 
 			close(fd);
-			delta = stop(0, 0);
+			delta = stop(&start_tv, &stop_tv);
 			fsync_usec += delta;
 
 			if (delta > max_fsync_usec)
@@ -809,7 +811,7 @@ void do_run(child_job_t *child_task)
 				names[file_index].target_dir,
 				names[file_index].f_name);
 
-			start(0);
+			start(&start_tv);
 			if ((fd = open(file_target_name, O_RDONLY, 0666)) == -1) {
 				fprintf(stderr, "Error in open of %s : %s\n",
 					file_target_name, strerror(errno));
@@ -823,7 +825,7 @@ void do_run(child_job_t *child_task)
 			}
 
 			close(fd);
-			delta = stop(0, 0);
+			delta = stop(&start_tv, &stop_tv);
 			fsync_usec += delta;
 
 			if (delta > max_fsync_usec)
@@ -845,7 +847,7 @@ void do_run(child_job_t *child_task)
 		sprintf(file_target_name, "%s/%s", names[0].target_dir,
 			names[0].f_name);
 
-		start(0);
+		start(&start_tv);
 		if ((fd = open(file_target_name, O_RDONLY, 0666)) == -1) {
 			fprintf(stderr, "Error in open of %s : %s\n",
 				file_target_name, strerror(errno));
@@ -859,7 +861,7 @@ void do_run(child_job_t *child_task)
 		}
 
 		close(fd);
-		fsync_usec += stop(0, 0);
+		fsync_usec += stop(&start_tv, &stop_tv);
 	}
 
 	/*
@@ -876,13 +878,13 @@ void do_run(child_job_t *child_task)
 				names[file_index].target_dir,
 				names[file_index].f_name);
 
-			start(0);
+			start(&start_tv);
 			if (unlink(file_target_name) == -1) {
 				fprintf(stderr, "Error in unlink of %s : %s\n",
 					file_target_name, strerror(errno));
 				cleanup_exit();
 			}
-			delta = stop(0, 0);
+			delta = stop(&start_tv, &stop_tv);
 
 			unlink_usec += delta;
 			if (delta > max_unlink_usec)
