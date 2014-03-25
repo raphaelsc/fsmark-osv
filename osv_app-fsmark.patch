@@ -1,0 +1,917 @@
+From f4828d593f14fe5ccfcfa3b958edd3b81baaa945 Mon Sep 17 00:00:00 2001
+From: "Raphael S. Carvalho" <raphaelsc@cloudius-systems.com>
+Date: Tue, 25 Mar 2014 15:53:57 -0300
+Subject: [PATCH v2 osv-apps] Add fsmark module
+
+fsmark is an I/O benchmark tool.
+fsmark originally uses fork when kicking off new tasks, so I had to change
+the code to use threads instead.
+
+Signed-off-by: Raphael S. Carvalho <raphaelsc@cloudius-systems.com>
+---
+ fsmark/GET              |  16 +
+ fsmark/Makefile         |  15 +
+ fsmark/fsmark-osv.patch | 820 ++++++++++++++++++++++++++++++++++++++++++++++++
+ fsmark/module.py        |   3 +
+ modules.json            |   4 +
+ 5 files changed, 858 insertions(+)
+ create mode 100755 fsmark/GET
+ create mode 100644 fsmark/Makefile
+ create mode 100644 fsmark/fsmark-osv.patch
+ create mode 100644 fsmark/module.py
+
+diff --git a/fsmark/GET b/fsmark/GET
+new file mode 100755
+index 0000000..d85b17f
+--- /dev/null
++++ b/fsmark/GET
+@@ -0,0 +1,16 @@
++#!/bin/sh
++
++# Build a directory from the upstream fsmark.
++set -e
++VERSION=3.3
++
++mkdir upstream
++cd upstream
++wget http://sourceforge.net/projects/fsmark/files/fsmark/$VERSION/fs_mark-$VERSION.tar.gz
++tar zxvf fs_mark-$VERSION.tar.gz
++mv ./fs_mark-$VERSION ./fs_mark
++
++cd fs_mark
++patch -p1 < ../../fsmark-osv.patch
++cd ..
++cd ..
+diff --git a/fsmark/Makefile b/fsmark/Makefile
+new file mode 100644
+index 0000000..0437688
+--- /dev/null
++++ b/fsmark/Makefile
+@@ -0,0 +1,15 @@
++.PHONY: module
++module: fsmark.so
++	echo '/fsmark.so: $${MODULE_DIR}/fsmark.so' > usr.manifest
++	: > bootfs.manifest
++
++fsmark.so: upstream
++	make -C upstream/fs_mark CFLAGS="-fPIC -shared" CPPFLAGS="-fPIC -shared"
++	cp -vf upstream/fs_mark/fs_mark fsmark.so
++
++upstream:
++	./GET
++
++.PHONY: clean
++clean:
++	rm -rf upstream *.so usr.manifest bootfs.manifest *~
+diff --git a/fsmark/fsmark-osv.patch b/fsmark/fsmark-osv.patch
+new file mode 100644
+index 0000000..ea244f5
+--- /dev/null
++++ b/fsmark/fsmark-osv.patch
+@@ -0,0 +1,820 @@
++From b6e2d5714267dd3634335361cd7b01ba564b0feb Mon Sep 17 00:00:00 2001
++From: "Raphael S. Carvalho" <raphaelsc@cloudius-systems.com>
++Date: Tue, 25 Mar 2014 15:41:40 -0300
++Subject: [PATCH] FSmark port to OSv - changed to use threads instead!
++
++Signed-off-by: Raphael S. Carvalho <raphaelsc@cloudius-systems.com>
++---
++ Makefile          |  14 ++-
++ README            |  27 +++++
++ fs_mark.c         | 321 ++++++++++++++++++------------------------------------
++ fs_mark.h         |  22 ++--
++ gettid_wrapper.cc |  17 +++
++ lib_timing.c      |   2 +-
++ 6 files changed, 173 insertions(+), 230 deletions(-)
++ create mode 100644 gettid_wrapper.cc
++
++diff --git a/Makefile b/Makefile
++index 9313532..305055b 100644
++--- a/Makefile
+++++ b/Makefile
++@@ -9,15 +9,21 @@
++ DIR1= /test/dir1
++ DIR2= /test/dir2
++ 
++-COBJS= fs_mark.o lib_timing.o
++-CFLAGS= -O2 -Wall -D_FILE_OFFSET_BITS=64
+++COBJS= fs_mark.o lib_timing.o gettid_wrapper.o
+++CFLAGS= -O2 -Wall
+++
+++%.o: %.c
+++	$(CC) -c -o $@ $< $(CFLAGS)
+++
+++%.o: %.cc
+++	$(CC) -c -o $@ $< $(CFLAGS)
++ 
++ all: fs_mark 
++ 
++ fs_mark.o: fs_mark.c fs_mark.h
++ 
++-fs_mark: fs_mark.o lib_timing.o
++-	${CC} -static -o fs_mark fs_mark.o lib_timing.o
+++fs_mark: fs_mark.o lib_timing.o gettid_wrapper.o
+++	${CC} $(CFLAGS) -lpthread -o fs_mark fs_mark.o lib_timing.o gettid_wrapper.o
++ 
++ test: fs_mark
++ 	./fs_mark -d ${DIR1} -d ${DIR2} -s 51200 -n 4096
++diff --git a/README b/README
++index 69adfed..3167840 100644
++--- a/README
+++++ b/README
++@@ -1,3 +1,25 @@
+++Beware: I wasn't able to compile fsmark-osv on a 32-bit 4.4.5-8 Debian Linux using gcc version 4.45.
+++
+++How to use fsmark-osv in OSv
+++=====
+++1) Clone OSv from https://github.com/cloudius-systems/osv.git
+++2) Inside OSv directory, clone fsmark-osv.
+++3) Then apply the patch from fsmark-osv into OSv tree:
+++patch -p1 < fsmark-osv/fs_mark.patch
+++4) Build OSv as the README file inside OSv directory explains.
+++5) Run fsmark-osv by using the following example command:
+++sudo ./scripts/run.py -e 'fs_mark.so -v -d /fsmark_testdir -s 10240 -n 100'
+++
+++* To use fsmark-osv in Linux, simply build it through 'make' and start using it.
+++
+++Why OSv needs a tailored version of fsmark?
+++=====
+++OSv was designed to run a single process, and that means a single address
+++space. The problem is that fsmark uses fork when kicking off tasks, and given
+++the OSv design decision mentioned above, fork semantics cannot be properly
+++implemented. To get fsmark running properly in OSv, the code would have to be
+++changed to use threads instead. Here borns fsmark-osv!
+++
++ #
++ # Copyright (C) 2003-2004 EMC Corporation
++ #
++@@ -20,6 +42,11 @@
++ # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ #
++ 
+++#
+++# Raphael S. Carvalho <raphaelsc@cloudius-systems.com>:
+++# Change fs_mark to use threads instead.
+++#
+++
++ FS_MARK
++ ==============
++ 
++diff --git a/fs_mark.c b/fs_mark.c
++index a6bea34..f73f73e 100644
++--- a/fs_mark.c
+++++ b/fs_mark.c
++@@ -20,6 +20,11 @@
++  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++  */
++ 
+++/*
+++ * Raphael S. Carvalho <raphaelsc@cloudius-systems.com>:
+++ * Change fs_mark to use threads instead.
+++ */
+++
++ /* gratuitous change */
++ /*
++  * Version string should be bumped on major revision changes
++@@ -41,20 +46,24 @@ char *fs_mark_version = "3.3";
++ #include <dirent.h>
++ #include <ctype.h>
++ #include <time.h>
+++#include <assert.h>
+++#include <pthread.h>
++ 
+++#ifndef __OSV__
++ #include <linux/types.h>
++ #include <linux/limits.h>
++ #include <linux/unistd.h>
+++#else
+++#include <limits.h>
+++#include <unistd.h>
+++#endif
+++
+++extern long __gettid();
++ 
++ #include "fs_mark.h"
++ 
++ void cleanup_exit(void)
++ {
++-	char child_log_file_name[PATH_MAX];
++-
++-	sprintf(child_log_file_name, "%s.%d", log_file_name, getpid());
++-	unlink(child_log_file_name);
++-
++ 	exit(1);
++ }
++ 
++@@ -284,12 +293,12 @@ void process_args(int argc, char **argv, char **envp)
++ /*
++  * Extract & return the file name from the child_tasks array
++  */
++-char *find_dir_name(int pid)
+++char *find_dir_name(long tid)
++ {
++ 	int num_dir;
++ 
++ 	for (num_dir = 0; num_dir < MAX_THREADS; num_dir++) {
++-		if (child_tasks[num_dir].child_pid == pid)
+++		if (child_tasks[num_dir].child_tid == tid)
++ 			break;
++ 	}
++ 
++@@ -299,13 +308,13 @@ char *find_dir_name(int pid)
++ /*
++  * Setup a file name.
++  */
++-void setup_file_name(int file_index, pid_t my_pid)
+++void setup_file_name(child_job_t *child_task, int file_index, long my_tid)
++ {
++ 	int seq_len;
++ 	int j, pad, skip;
++ 	unsigned long sec_time;
++ 	char *my_dir;
++-	my_dir = find_dir_name(my_pid);
+++	my_dir = find_dir_name(my_tid);
++ 	char subdir_name[MAX_NAME_PATH];
++ 	struct timeval now;
++ 
++@@ -330,8 +339,8 @@ void setup_file_name(int file_index, pid_t my_pid)
++ 	 */
++ 	seq_len = name_len - rand_len;
++ 
++-	if (names == NULL) {
++-		if ((names =
+++	if (child_task->names == NULL) {
+++		if ((child_task->names =
++ 		     calloc(sizeof(struct name_entry), num_files)) == NULL) {
++ 			fprintf(stderr,
++ 				"fs_mark: failed to allocate memory for file names: %s\n",
++@@ -379,24 +388,24 @@ void setup_file_name(int file_index, pid_t my_pid)
++ 		break;
++ 	}
++ 
++-	sprintf(names[file_index].target_dir, "%s/%s", my_dir, subdir_name);
+++	sprintf(child_task->names[file_index].target_dir, "%s/%s", my_dir, subdir_name);
++ 
++ 	/*
++ 	 * Make the base directory entry (i.e., /mnt/1/test/00)
++ 	 */
++-	if ((mkdir(names[file_index].target_dir, 0777) != 0)
+++	if ((mkdir(child_task->names[file_index].target_dir, 0777) != 0)
++ 	    && (errno != EEXIST)) {
++ 		fprintf(stderr, "fs_mark: mkdir %s failed: %s\n",
++-			names[file_index].target_dir, strerror(errno));
+++			child_task->names[file_index].target_dir, strerror(errno));
++ 		cleanup_exit();
++ 	}
++ 
++-	sprintf(names[file_index].write_dir, "%s", names[file_index].target_dir);
+++	sprintf(child_task->names[file_index].write_dir, "%s", child_task->names[file_index].target_dir);
++ 
++ 	/*
++ 	 * Set up the sequential name for this file
++ 	 */
++-	sprintf(seq_name, "%lx", sec_time);
+++	sprintf(child_task->seq_name, "%lx", sec_time);
++ 
++ 	/*
++ 	 * Compute a random name for the file
++@@ -409,26 +418,26 @@ void setup_file_name(int file_index, pid_t my_pid)
++ 			long int val;
++ 
++ 			val = random();
++-			rand_name[j] = '0' + (val & 0x7f);
++-		} while (!(isupper(rand_name[j]) || isdigit(rand_name[j])));
+++			child_task->rand_name[j] = '0' + (val & 0x7f);
+++		} while (!(isupper(child_task->rand_name[j]) || isdigit(child_task->rand_name[j])));
++ 	}
++-	rand_name[rand_len] = 0;	/* Terminate string with NULL */
+++	child_task->rand_name[rand_len] = 0;	/* Terminate string with NULL */
++ 
++ 	/*
++ 	 * We want to create names with the specified number of sequential & random bytes.
++ 	 * Make sure to take the least signficant bytes of sequential (the most signficant
++ 	 * do not change)
++ 	 */
++-	skip = strlen(seq_name) - seq_len;
+++	skip = strlen(child_task->seq_name) - seq_len;
++ 	if (skip > 0) {		/* More sequential bytes than we need */
++-		strncat(names[file_index].f_name, &seq_name[skip], seq_len);
+++		strncat(child_task->names[file_index].f_name, &child_task->seq_name[skip], seq_len);
++ 	} else {
++-		strncat(names[file_index].f_name, seq_name, seq_len);
+++		strncat(child_task->names[file_index].f_name, child_task->seq_name, seq_len);
++ 	}
++-	pad = seq_len - strlen(seq_name);
+++	pad = seq_len - strlen(child_task->seq_name);
++ 	for (j = 0; j < pad; j++)
++-		strcat(names[file_index].f_name, "~");
++-	strncat(names[file_index].f_name, rand_name, rand_len);
+++		strcat(child_task->names[file_index].f_name, "~");
+++	strncat(child_task->names[file_index].f_name, child_task->rand_name, rand_len);
++ 
++ 	return;
++ }
++@@ -436,9 +445,9 @@ void setup_file_name(int file_index, pid_t my_pid)
++ /*
++  * Setup and initial state
++  */
++-void setup(pid_t pid)
+++void setup(child_job_t *child_task)
++ {
++-	char thread_log_file_name[PATH_MAX];
+++	long tid = child_task->child_tid;
++ 	char *my_dir;
++ 	struct timeval now;
++ 
++@@ -458,25 +467,14 @@ void setup(pid_t pid)
++ 	}
++ 
++ 	/*
++-	 * Open the log file in append mode to preserve previous runs data
++-	 */
++-	sprintf(thread_log_file_name, "%s.%d", log_file_name, pid);
++-	if ((child_log_file_fp = fopen(thread_log_file_name, "w")) == NULL) {
++-		fprintf(stderr,
++-			"fs_mark:  setup failed to fopen log file: %s %s\n",
++-			thread_log_file_name, strerror(errno));
++-		cleanup_exit();
++-	}
++-
++-	/*
++ 	 * Clear the io_buffer
++ 	 */
++-	memset(io_buffer, 0, io_buffer_size);
+++	memset(child_task->io_buffer, 0, io_buffer_size);
++ 
++ 	/*
++ 	 * Create my high level test directory
++ 	 */
++-	my_dir = find_dir_name(pid);
+++	my_dir = find_dir_name(tid);
++ 
++ 	if ((mkdir(my_dir, 0777) != 0) && (errno != EEXIST)) {
++ 		fprintf(stderr,
++@@ -537,7 +535,8 @@ unsigned long long get_bytes_free(char *dir_name)
++  * It chunks IO requests into the specified buffer size.  The data is just zeroed, 
++  * nothing in the kernel inspects the contents of the buffer on its way to disk.
++  */
++-void write_file(int fd,
+++void write_file(child_job_t *child_task,
+++		int fd,
++ 		int sz,
++ 		unsigned long long *avg_write_usec,
++ 		unsigned long long *total_write_usec,
++@@ -548,6 +547,7 @@ void write_file(int fd,
++ 	int sz_left;
++ 	int write_size, write_calls;
++ 	unsigned long long local_write_usec, delta;
+++	struct timeval start_tv, stop_tv;
++ 
++ 	write_calls = 0;
++ 	write_size = io_buffer_size;
++@@ -558,14 +558,14 @@ void write_file(int fd,
++ 		if (write_size > sz_left)
++ 			write_size = sz_left;
++ 
++-		start(0);
++-		if ((ret = write(fd, io_buffer, write_size)) != write_size) {
+++		start(&start_tv);
+++		if ((ret = write(fd, child_task->io_buffer, write_size)) != write_size) {
++ 			fprintf(stderr,
++ 				"fs_mark: write_file write failed: %d %s\n",
++ 				ret, strerror(errno));
++ 			cleanup_exit();
++ 		}
++-		delta = stop(0, 0);
+++		delta = stop(&start_tv, &stop_tv);
++ 
++ 		local_write_usec += delta;
++ 
++@@ -588,12 +588,12 @@ void write_file(int fd,
++ /*
++  * Verify that there is enough space for this run.
++  */
++-static void check_space(pid_t my_pid)
+++static void check_space(long my_tid)
++ {
++ 	char *my_dir_name;
++ 	unsigned long long bytes_per_loop;
++ 
++-	my_dir_name = find_dir_name(my_pid);
+++	my_dir_name = find_dir_name(my_tid);
++ 
++ 	/*
++ 	 * No use in running this if the file system is already full.
++@@ -616,10 +616,13 @@ static void check_space(pid_t my_pid)
++  * Each of the subcomponents is measured separately so we can track how specific aspects 
++  * degrade.
++  */
++-static struct timeval loop_start_tv, loop_stop_tv;
++ 
++-void do_run(pid_t my_pid)
+++void do_run(child_job_t *child_task)
++ {
+++	struct timeval loop_start_tv, loop_stop_tv;
+++	struct timeval start_tv, stop_tv;
+++	struct name_entry *names = NULL;
+++	long my_tid = child_task->child_tid;
++ 	int file_index, fd;
++ 	float files_per_sec;
++ 	unsigned long long total_file_ops, delta, loop_usecs;
++@@ -636,7 +639,7 @@ void do_run(pid_t my_pid)
++ 	/*
++ 	 * Verify that there is enough space for this run.
++ 	 */
++-	check_space(my_pid);
+++	check_space(my_tid);
++ 
++ 	/*
++ 	 * This loop uses microsecond timers to measure each individual file operation.
++@@ -669,7 +672,8 @@ void do_run(pid_t my_pid)
++ 		 * Note: the file name is a full path, so it specifies both the directory and 
++ 		 * filename with the directory.
++ 		 */
++-		setup_file_name(file_index, my_pid);
+++		setup_file_name(child_task, file_index, my_tid);
+++		names = child_task->names;
++ 
++ 		/*
++ 		 * Time the creation of the file.
++@@ -679,7 +683,7 @@ void do_run(pid_t my_pid)
++ 		sprintf(file_target_name, "%s/%s", names[file_index].target_dir,
++ 			names[file_index].f_name);
++ 
++-		start(0);
+++		start(&start_tv);
++ 		if ((fd =
++ 		     open(file_write_name, O_CREAT | O_RDWR | O_TRUNC,
++ 			  0666)) == -1) {
++@@ -687,7 +691,7 @@ void do_run(pid_t my_pid)
++ 				strerror(errno));
++ 			cleanup_exit();
++ 		}
++-		delta = stop(0, 0);
+++		delta = stop(&start_tv, &stop_tv);
++ 		creat_usec += delta;
++ 
++ 		if (delta > max_creat_usec)
++@@ -703,7 +707,7 @@ void do_run(pid_t my_pid)
++ 		 * In avg_write_usec, we acculumate the average of the average write times.
++ 		 * In total_write_usec, we track the total time spent in write().
++ 		 */
++-		write_file(fd, file_size, &avg_write_usec, &total_write_usec,
+++		write_file(child_task, fd, file_size, &avg_write_usec, &total_write_usec,
++ 			   &min_write_usec, &max_write_usec);
++ 
++ 		/*
++@@ -712,14 +716,14 @@ void do_run(pid_t my_pid)
++ 		 * this actually flushed the IDE write cache as well.
++ 		 */
++ 		if (sync_method & FSYNC_BEFORE_CLOSE) {
++-			start(0);
+++			start(&start_tv);
++ 
++ 			if (fsync(fd) == -1) {
++ 				fprintf(stderr, "fs_mark: fsync failed %s\n",
++ 					strerror(errno));
++ 				cleanup_exit();
++ 			}
++-			delta = stop(0, 0);
+++			delta = stop(&start_tv, &stop_tv);
++ 			fsync_usec += delta;
++ 
++ 			if (delta > max_fsync_usec)
++@@ -731,9 +735,9 @@ void do_run(pid_t my_pid)
++ 		/*
++ 		 * Time the file close
++ 		 */
++-		start(0);
+++		start(&start_tv);
++ 		close(fd);
++-		delta = stop(0, 0);
+++		delta = stop(&start_tv, &stop_tv);
++ 
++ 		close_usec += delta;
++ 		if (delta > max_close_usec)
++@@ -743,11 +747,12 @@ void do_run(pid_t my_pid)
++ 			min_close_usec = delta;
++ 
++ 	}
+++	assert(names);
++ 
++ 	if (sync_method & FSYNC_SYNC_SYSCALL) {
++-		start(0);
+++		start(&start_tv);
++ 		sync();
++-		delta = stop(0, 0);
+++		delta = stop(&start_tv, &stop_tv);
++ 
++ 		/*
++ 		 * Add the time spent in sync() to the total cost of fsync()
++@@ -768,7 +773,7 @@ void do_run(pid_t my_pid)
++ 				names[file_index].target_dir,
++ 				names[file_index].f_name);
++ 
++-			start(0);
+++			start(&start_tv);
++ 			if ((fd = open(file_target_name, O_RDONLY, 0666)) == -1) {
++ 				fprintf(stderr, "Error in open of %s : %s\n",
++ 					file_target_name, strerror(errno));
++@@ -782,7 +787,7 @@ void do_run(pid_t my_pid)
++ 			}
++ 
++ 			close(fd);
++-			delta = stop(0, 0);
+++			delta = stop(&start_tv, &stop_tv);
++ 			fsync_usec += delta;
++ 
++ 			if (delta > max_fsync_usec)
++@@ -806,7 +811,7 @@ void do_run(pid_t my_pid)
++ 				names[file_index].target_dir,
++ 				names[file_index].f_name);
++ 
++-			start(0);
+++			start(&start_tv);
++ 			if ((fd = open(file_target_name, O_RDONLY, 0666)) == -1) {
++ 				fprintf(stderr, "Error in open of %s : %s\n",
++ 					file_target_name, strerror(errno));
++@@ -820,7 +825,7 @@ void do_run(pid_t my_pid)
++ 			}
++ 
++ 			close(fd);
++-			delta = stop(0, 0);
+++			delta = stop(&start_tv, &stop_tv);
++ 			fsync_usec += delta;
++ 
++ 			if (delta > max_fsync_usec)
++@@ -842,7 +847,7 @@ void do_run(pid_t my_pid)
++ 		sprintf(file_target_name, "%s/%s", names[0].target_dir,
++ 			names[0].f_name);
++ 
++-		start(0);
+++		start(&start_tv);
++ 		if ((fd = open(file_target_name, O_RDONLY, 0666)) == -1) {
++ 			fprintf(stderr, "Error in open of %s : %s\n",
++ 				file_target_name, strerror(errno));
++@@ -856,7 +861,7 @@ void do_run(pid_t my_pid)
++ 		}
++ 
++ 		close(fd);
++-		fsync_usec += stop(0, 0);
+++		fsync_usec += stop(&start_tv, &stop_tv);
++ 	}
++ 
++ 	/*
++@@ -873,13 +878,13 @@ void do_run(pid_t my_pid)
++ 				names[file_index].target_dir,
++ 				names[file_index].f_name);
++ 
++-			start(0);
+++			start(&start_tv);
++ 			if (unlink(file_target_name) == -1) {
++ 				fprintf(stderr, "Error in unlink of %s : %s\n",
++ 					file_target_name, strerror(errno));
++ 				cleanup_exit();
++ 			}
++-			delta = stop(0, 0);
+++			delta = stop(&start_tv, &stop_tv);
++ 
++ 			unlink_usec += delta;
++ 			if (delta > max_unlink_usec)
++@@ -909,82 +914,25 @@ void do_run(pid_t my_pid)
++ 	 */
++ 	files_per_sec = num_files / (loop_usecs / 1000000.0);
++ 
++-	/*
++-	 * Write to the log file.
++-	 */
++-	fprintf(child_log_file_fp,
++-		"%u %.1f %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu\n",
++-		file_count,
++-		files_per_sec,
++-		app_overhead_usec,
++-		min_creat_usec,
++-		creat_usec / num_files,
++-		max_creat_usec,
++-		min_write_usec,
++-		avg_write_usec / num_files,
++-		max_write_usec,
++-		min_fsync_usec,
++-		fsync_usec / num_files,
++-		max_fsync_usec,
++-		avg_sync_usec,
++-		min_close_usec,
++-		close_usec / num_files,
++-		max_close_usec,
++-		min_unlink_usec, unlink_usec / num_files, max_unlink_usec);
++-
++-	fflush(child_log_file_fp);
++-
++-	return;
++-}
++-
++-void process_child_log_file(pid_t child_pid, fs_mark_stat_t * thread_stats)
++-{
++-	char child_log_file_name[PATH_MAX];
++-	FILE *thread_log_fp;
++-	int res;
++-
++-	/*
++-	 * Compute and open the child thread log file
++-	 */
++-	sprintf(child_log_file_name, "%s.%d", log_file_name, child_pid);
++-	if ((thread_log_fp = fopen(child_log_file_name, "r")) == NULL) {
++-		fprintf(stderr, "fopen failed to open: %s\n",
++-			child_log_file_name);
++-		cleanup_exit();
++-	}
++-
++-	if ((res = fscanf(thread_log_fp,
++-			  "%u %f %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu",
++-			  &thread_stats->file_count,
++-			  &thread_stats->files_per_sec,
++-			  &thread_stats->app_overhead_usec,
++-			  &thread_stats->min_creat_usec,
++-			  &thread_stats->avg_creat_usec,
++-			  &thread_stats->max_creat_usec,
++-			  &thread_stats->min_write_usec,
++-			  &thread_stats->avg_write_usec,
++-			  &thread_stats->max_write_usec,
++-			  &thread_stats->min_fsync_usec,
++-			  &thread_stats->avg_fsync_usec,
++-			  &thread_stats->max_fsync_usec,
++-			  &thread_stats->avg_sync_usec,
++-			  &thread_stats->min_close_usec,
++-			  &thread_stats->avg_close_usec,
++-			  &thread_stats->max_close_usec,
++-			  &thread_stats->min_unlink_usec,
++-			  &thread_stats->avg_unlink_usec,
++-			  &thread_stats->max_unlink_usec)) != 19) {
++-		fprintf(stderr,
++-			"fscanf read too few entries from thread log file: %s\n",
++-			child_log_file_name);
++-		cleanup_exit();
++-	}
++-
++-	/*
++-	 * Close & remove the thread log file
++-	 */
++-	fclose(thread_log_fp);
++-	unlink(child_log_file_name);
+++	child_task->thread_stats.file_count = file_count;
+++	child_task->thread_stats.files_per_sec = files_per_sec;
+++	child_task->thread_stats.app_overhead_usec = app_overhead_usec;
+++	child_task->thread_stats.min_creat_usec = min_creat_usec;
+++	child_task->thread_stats.avg_creat_usec = creat_usec / num_files;
+++	child_task->thread_stats.max_creat_usec = max_creat_usec;
+++	child_task->thread_stats.min_write_usec = min_write_usec;
+++	child_task->thread_stats.avg_write_usec = avg_write_usec / num_files;
+++	child_task->thread_stats.max_write_usec = max_write_usec;
+++	child_task->thread_stats.min_fsync_usec = min_fsync_usec;
+++	child_task->thread_stats.avg_fsync_usec = fsync_usec / num_files;
+++	child_task->thread_stats.max_fsync_usec = max_fsync_usec;
+++	child_task->thread_stats.avg_sync_usec = avg_sync_usec;
+++	child_task->thread_stats.min_close_usec= min_close_usec;
+++	child_task->thread_stats.avg_close_usec = close_usec / num_files;
+++	child_task->thread_stats.max_close_usec = max_close_usec;
+++	child_task->thread_stats.min_unlink_usec = min_unlink_usec;
+++	child_task->thread_stats.avg_unlink_usec = unlink_usec / num_files;
+++	child_task->thread_stats.max_unlink_usec = max_unlink_usec;
++ 
++ 	return;
++ }
++@@ -998,7 +946,7 @@ void aggregate_thread_stats(fs_mark_stat_t * thread_stats,
++ 	int i;
++ 
++ 	for (i = 0; i < num_threads; i++) {
++-		process_child_log_file(child_tasks[i].child_pid, thread_stats);
+++		thread_stats = &child_tasks[i].thread_stats;
++ 
++ 		/*
++ 		 * File count and files/second are simple additions
++@@ -1105,92 +1053,41 @@ void aggregate_thread_stats(fs_mark_stat_t * thread_stats,
++ /*
++  * Simple wrapper for the per thread work routines.
++  */
++-void thread_work(pid_t my_pid)
+++void thread_work(child_job_t *child_task)
++ {
++-
++ 	/*
++ 	 * Do any initialization
++ 	 */
++-	setup(my_pid);
+++	setup(child_task);
++ 
++-	do_run(my_pid);
+++	do_run(child_task);
+++}
++ 
++-	fclose(child_log_file_fp);
+++void *thread_function(void *p)
+++{
+++	child_job_t *child_task = (child_job_t *) p;
+++	child_task->child_tid = __gettid();
+++	child_task->names = NULL;
+++
+++	thread_work(child_task);
+++	return NULL;
++ }
++ 
++-/*
++- * This routine is used only when running more than one thread (done whenever writing to
++- * more than one directory).
++- * Fork each of the required threads and then wait on their exit status.
++- */
++ void fork_threads(void)
++ {
++-	int i, active_kids = 0;
+++	int i;
+++	pthread_t thread_id[num_threads];
++ 
++-	/*
++-	 * Clear out any pending writes before the fork so we don't get duplication
++-	 */
++ 	fflush(stdout);
++ 	fflush(log_file_fp);
++ 
++-	/*
++-	 * Fork one thread for each of the specified children
++-	 */
++-
++ 	for (i = 0; i < num_threads; i++) {
++-		if ((child_tasks[i].child_pid = fork()) == -1) {
++-			fprintf(stderr, "fs_mark: fork failed: %s\n",
++-				strerror(errno));
++-			cleanup_exit();
++-		}
++-		if (child_tasks[i].child_pid == 0) {
++-
++-			/*
++-			 * Child thread: Set my real pid in the array and
++-			 * then do work.
++-			 */
++-			child_tasks[i].child_pid = getpid();
++-			thread_work(child_tasks[i].child_pid);
++-
++-			/*
++-			 * My work is done, exit to let parent thread reap my state
++-			 */
++-			exit(0);
++-		}
++-		active_kids++;
+++		pthread_create(&thread_id[i], NULL, thread_function, (void *)&child_tasks[i]);
++ 	}
++ 
++-	/*
++-	 * Parent thread: Wait for each of the child threads to exit
++-	 */
++-	while (active_kids) {
++-		int status;
++-		pid_t child_pid;
++-
++-		/*
++-		 * Wait until child exits. Note that we need to loop on interrupts (this 
++-		 * happens in gdb, etc).
++-		 */
++-		child_pid = wait(&status);
++-		if (child_pid == -1) {
++-			if (errno == EINTR)
++-				continue;
++-			fprintf(stderr, "fs_mark: wait failed: %s\n",
++-				strerror(errno));
++-			exit(0);
++-		}
++-
++-		/*
++-		 * Check that this was the clean exit of one of our threads
++-		 */
++-		for (i = 0; i < num_threads; i++) {
++-			if (child_tasks[i].child_pid == child_pid) {
++-				active_kids--;
++-				break;
++-			}
++-		}
+++	for (i = 0; i < num_threads; i++) {
+++		pthread_join(thread_id[i], NULL);
++ 	}
++-	return;
++ }
++ 
++ /*
++diff --git a/fs_mark.h b/fs_mark.h
++index 0cb26a3..481f427 100644
++--- a/fs_mark.h
+++++ b/fs_mark.h
++@@ -127,30 +127,17 @@ int	do_fill_fs = 0;				/* Run until the file system is full  */
++ int	verbose_stats = 0;		    	/* Print complete stats for each system call */
++ char 	log_file_name[PATH_MAX] = "fs_log.txt"; /* Log file name for run */
++ FILE	*log_file_fp;				/* Parent file pointer for log file  */
++-FILE	*child_log_file_fp;			/* Child file pointer for log file  */
++ 
++ unsigned int loop_count = 0;			/* How many times to loop */
++ unsigned int file_count = 0;			/* How many files written in this run  */
++ unsigned long long start_sec_time = 0;
++ 
++-static char io_buffer[MAX_IO_BUFFER_SIZE];	/* Buffer used in writes to files */
++-
++ struct name_entry {
++     char f_name[FILENAME_SIZE];			/* Actual name of file in directory without path */
++     char write_dir[MAX_NAME_PATH]; 		/* Name of directory file is written to */
++     char target_dir[MAX_NAME_PATH];	 	/* Name of directory when & if file is renamed */
++ };
++ 
++-struct name_entry *names = NULL; 		/* Array of names & paths used in test  */
++-
++-static char rand_name[FILENAME_SIZE];
++-static char seq_name[FILENAME_SIZE];
++-
++-typedef struct {
++-	pid_t	child_pid;
++-	char 	test_dir[PATH_MAX]; 		/* Directory name to use to create test files in */
++-} child_job_t;
++-
++ /*
++  * Structure used to record statisitics on each run of files.
++  */
++@@ -202,6 +189,15 @@ typedef struct {
++ 	unsigned long long max_close_usec;
++ } fs_mark_stat_t;
++ 
+++typedef struct {
+++        long    child_tid;
+++        char    test_dir[PATH_MAX];             /* Directory name to use to create test files in */
+++        char    io_buffer[MAX_IO_BUFFER_SIZE];  /* Buffer used in writes to files */
+++        struct name_entry *names;               /* Array of names & paths used in test  */
+++        char rand_name[FILENAME_SIZE];
+++        char seq_name[FILENAME_SIZE];
+++        fs_mark_stat_t thread_stats;
+++} child_job_t;
++ 
++ /*
++  * For each child, we need to track its pid and the directory that it is to run in
++diff --git a/gettid_wrapper.cc b/gettid_wrapper.cc
++new file mode 100644
++index 0000000..75aa792
++--- /dev/null
+++++ b/gettid_wrapper.cc
++@@ -0,0 +1,17 @@
+++#ifdef __OSV__
+++extern long gettid();
+++
+++extern "C" long __gettid()
+++{
+++	return gettid();
+++}
+++#else
+++#include <sys/syscall.h>
+++
+++extern "C" int syscall(int);
+++
+++extern "C" long __gettid()
+++{
+++	return syscall(SYS_gettid);
+++}
+++#endif
++diff --git a/lib_timing.c b/lib_timing.c
++index ff5c4f2..297b4ec 100644
++--- a/lib_timing.c
+++++ b/lib_timing.c
++@@ -24,7 +24,7 @@
++ #include <unistd.h>
++ #include <stdlib.h>
++ #include <string.h>
++-#include <linux/types.h>
+++
++ 
++ #define	nz(x)	((x) == 0 ? 1 : (x))
++ 
++-- 
++1.8.5.3
++
+diff --git a/fsmark/module.py b/fsmark/module.py
+new file mode 100644
+index 0000000..961a0a4
+--- /dev/null
++++ b/fsmark/module.py
+@@ -0,0 +1,3 @@
++from osv.modules import api
++
++default = api.run("fsmark.so -d /fsmark_test -s 10240 -n 1000")
+diff --git a/modules.json b/modules.json
+index b6117a1..49cfd24 100644
+--- a/modules.json
++++ b/modules.json
+@@ -50,5 +50,9 @@
+ "openjdk8": {
+     "type": "direct-dir",
+     "path": "${OSV_BASE}/apps/openjdk8/"
++},
++"fsmark" : {
++    "type": "direct-dir",
++    "path": "${OSV_BASE}/apps/fsmark/"
+ }
+ }
+-- 
+1.8.5.3
+
