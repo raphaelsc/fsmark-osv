@@ -293,12 +293,12 @@ void process_args(int argc, char **argv, char **envp)
 /*
  * Extract & return the file name from the child_tasks array
  */
-char *find_dir_name(int pid)
+char *find_dir_name(long tid)
 {
 	int num_dir;
 
 	for (num_dir = 0; num_dir < MAX_THREADS; num_dir++) {
-		if (child_tasks[num_dir].child_pid == pid)
+		if (child_tasks[num_dir].child_tid == tid)
 			break;
 	}
 
@@ -308,13 +308,13 @@ char *find_dir_name(int pid)
 /*
  * Setup a file name.
  */
-void setup_file_name(child_job_t *child_task, int file_index, pid_t my_pid)
+void setup_file_name(child_job_t *child_task, int file_index, long my_tid)
 {
 	int seq_len;
 	int j, pad, skip;
 	unsigned long sec_time;
 	char *my_dir;
-	my_dir = find_dir_name(my_pid);
+	my_dir = find_dir_name(my_tid);
 	char subdir_name[MAX_NAME_PATH];
 	struct timeval now;
 
@@ -447,7 +447,7 @@ void setup_file_name(child_job_t *child_task, int file_index, pid_t my_pid)
  */
 void setup(child_job_t *child_task)
 {
-	pid_t pid = child_task->child_pid;
+	long tid = child_task->child_tid;
 	char *my_dir;
 	struct timeval now;
 
@@ -474,7 +474,7 @@ void setup(child_job_t *child_task)
 	/*
 	 * Create my high level test directory
 	 */
-	my_dir = find_dir_name(pid);
+	my_dir = find_dir_name(tid);
 
 	if ((mkdir(my_dir, 0777) != 0) && (errno != EEXIST)) {
 		fprintf(stderr,
@@ -587,12 +587,12 @@ void write_file(child_job_t *child_task,
 /*
  * Verify that there is enough space for this run.
  */
-static void check_space(pid_t my_pid)
+static void check_space(long my_tid)
 {
 	char *my_dir_name;
 	unsigned long long bytes_per_loop;
 
-	my_dir_name = find_dir_name(my_pid);
+	my_dir_name = find_dir_name(my_tid);
 
 	/*
 	 * No use in running this if the file system is already full.
@@ -620,7 +620,7 @@ static __thread struct timeval loop_start_tv, loop_stop_tv;
 void do_run(child_job_t *child_task)
 {
 	struct name_entry *names = NULL;
-	pid_t my_pid = child_task->child_pid;
+	long my_tid = child_task->child_tid;
 	int file_index, fd;
 	float files_per_sec;
 	unsigned long long total_file_ops, delta, loop_usecs;
@@ -637,7 +637,7 @@ void do_run(child_job_t *child_task)
 	/*
 	 * Verify that there is enough space for this run.
 	 */
-	check_space(my_pid);
+	check_space(my_tid);
 
 	/*
 	 * This loop uses microsecond timers to measure each individual file operation.
@@ -670,7 +670,7 @@ void do_run(child_job_t *child_task)
 		 * Note: the file name is a full path, so it specifies both the directory and 
 		 * filename with the directory.
 		 */
-		setup_file_name(child_task, file_index, my_pid);
+		setup_file_name(child_task, file_index, my_tid);
 		names = child_task->names;
 
 		/*
@@ -1064,7 +1064,7 @@ void thread_work(child_job_t *child_task)
 void *thread_function(void *p) 
 {
 	child_job_t *child_task = (child_job_t *) p;
-	child_task->child_pid = (pid_t) __gettid();
+	child_task->child_tid = __gettid();
 	child_task->names = NULL;
 
 	thread_work(child_task);

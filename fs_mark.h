@@ -190,7 +190,7 @@ typedef struct {
 } fs_mark_stat_t;
 
 typedef struct {
-        pid_t   child_pid;
+        long    child_tid;
         char    test_dir[PATH_MAX];             /* Directory name to use to create test files in */
         char    io_buffer[MAX_IO_BUFFER_SIZE];  /* Buffer used in writes to files */
         struct name_entry *names;               /* Array of names & paths used in test  */
