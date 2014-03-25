@@ -1,7 +1,17 @@
 Beware: I wasn't able to compile fsmark-osv on a 32-bit 4.4.5-8 Debian Linux using gcc version 4.45.
 
+Why OSv needs a tailored version of fsmark?
+=====
+OSv was designed to run a single process, and that means a single address
+space. The problem is that fsmark uses fork when kicking off tasks, and given
+the OSv design decision mentioned above, fork semantics cannot be properly
+implemented. To get fsmark running properly in OSv, the code would have to be
+changed to use threads instead. Here borns fsmark-osv!
+
 How to use fsmark-osv in OSv
 =====
+* If fsmark is available as an OSv app, simply do: 'make image=fsmark'
+* Otherwise, follow the steps below:
 1) Clone OSv from https://github.com/cloudius-systems/osv.git
 2) Inside OSv directory, clone fsmark-osv.
 3) Then apply the patch from fsmark-osv into OSv tree:
@@ -11,14 +21,6 @@ patch -p1 < fsmark-osv/fs_mark.patch
 sudo ./scripts/run.py -e 'fs_mark.so -v -d /fsmark_testdir -s 10240 -n 100'
 
 * To use fsmark-osv in Linux, simply build it through 'make' and start using it.
-
-Why OSv needs a tailored version of fsmark?
-=====
-OSv was designed to run a single process, and that means a single address
-space. The problem is that fsmark uses fork when kicking off tasks, and given
-the OSv design decision mentioned above, fork semantics cannot be properly
-implemented. To get fsmark running properly in OSv, the code would have to be
-changed to use threads instead. Here borns fsmark-osv!
 
 #
 # Copyright (C) 2003-2004 EMC Corporation
