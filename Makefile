@@ -12,6 +12,12 @@ DIR2= /test/dir2
 COBJS= fs_mark.o lib_timing.o gettid_wrapper.o 
 CFLAGS= -O2 -Wall
 
+%.o: %.c
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+%.o: %.cc
+	$(CC) -c -o $@ $< $(CFLAGS)
+
 all: fs_mark 
 
 fs_mark.o: fs_mark.c fs_mark.h
