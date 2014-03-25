@@ -38,7 +38,7 @@
 
 /* typedef unsigned long long uint64; */
 
-static struct timeval 	start_tv, stop_tv;
+static __thread struct timeval 	start_tv, stop_tv;
 
 
 /*

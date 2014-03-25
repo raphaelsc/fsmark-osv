@@ -64,11 +64,6 @@ extern long __gettid();
 
 void cleanup_exit(void)
 {
-	char child_log_file_name[PATH_MAX];
-
-	sprintf(child_log_file_name, "%s.%ld", log_file_name, __gettid());
-	unlink(child_log_file_name);
-
 	exit(1);
 }
 
@@ -453,7 +448,6 @@ void setup_file_name(child_job_t *child_task, int file_index, pid_t my_pid)
 void setup(child_job_t *child_task)
 {
 	pid_t pid = child_task->child_pid;
-	char thread_log_file_name[PATH_MAX];
 	char *my_dir;
 	struct timeval now;
 
@@ -470,17 +464,6 @@ void setup(child_job_t *child_task)
 		 * few directories, pick a starting directory based on the time value.
 		 */
 		current_subdir = now.tv_sec % num_subdirs;
-	}
-
-	/*
-	 * Open the log file in append mode to preserve previous runs data
-	 */
-	sprintf(thread_log_file_name, "%s.%d", log_file_name, pid);
-	if ((child_task->child_log_file_fp = fopen(thread_log_file_name, "w")) == NULL) {
-		fprintf(stderr,
-			"fs_mark:  setup failed to fopen log file: %s %s\n",
-			thread_log_file_name, strerror(errno));
-		cleanup_exit();
 	}
 
 	/*
@@ -632,7 +615,7 @@ static void check_space(pid_t my_pid)
  * Each of the subcomponents is measured separately so we can track how specific aspects 
  * degrade.
  */
-static struct timeval loop_start_tv, loop_stop_tv;
+static __thread struct timeval loop_start_tv, loop_stop_tv;
 
 void do_run(child_job_t *child_task)
 {
@@ -929,82 +912,25 @@ void do_run(child_job_t *child_task)
 	 */
 	files_per_sec = num_files / (loop_usecs / 1000000.0);
 
-	/*
-	 * Write to the log file.
-	 */
-	fprintf(child_task->child_log_file_fp,
-		"%u %.1f %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu\n",
-		file_count,
-		files_per_sec,
-		app_overhead_usec,
-		min_creat_usec,
-		creat_usec / num_files,
-		max_creat_usec,
-		min_write_usec,
-		avg_write_usec / num_files,
-		max_write_usec,
-		min_fsync_usec,
-		fsync_usec / num_files,
-		max_fsync_usec,
-		avg_sync_usec,
-		min_close_usec,
-		close_usec / num_files,
-		max_close_usec,
-		min_unlink_usec, unlink_usec / num_files, max_unlink_usec);
-
-	fflush(child_task->child_log_file_fp);
-
-	return;
-}
-
-void process_child_log_file(pid_t child_pid, fs_mark_stat_t * thread_stats)
-{
-	char child_log_file_name[PATH_MAX];
-	FILE *thread_log_fp;
-	int res;
-
-	/*
-	 * Compute and open the child thread log file
-	 */
-	sprintf(child_log_file_name, "%s.%d", log_file_name, child_pid);
-	if ((thread_log_fp = fopen(child_log_file_name, "r")) == NULL) {
-		fprintf(stderr, "fopen failed to open: %s\n",
-			child_log_file_name);
-		cleanup_exit();
-	}
-
-	if ((res = fscanf(thread_log_fp,
-			  "%u %f %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu",
-			  &thread_stats->file_count,
-			  &thread_stats->files_per_sec,
-			  &thread_stats->app_overhead_usec,
-			  &thread_stats->min_creat_usec,
-			  &thread_stats->avg_creat_usec,
-			  &thread_stats->max_creat_usec,
-			  &thread_stats->min_write_usec,
-			  &thread_stats->avg_write_usec,
-			  &thread_stats->max_write_usec,
-			  &thread_stats->min_fsync_usec,
-			  &thread_stats->avg_fsync_usec,
-			  &thread_stats->max_fsync_usec,
-			  &thread_stats->avg_sync_usec,
-			  &thread_stats->min_close_usec,
-			  &thread_stats->avg_close_usec,
-			  &thread_stats->max_close_usec,
-			  &thread_stats->min_unlink_usec,
-			  &thread_stats->avg_unlink_usec,
-			  &thread_stats->max_unlink_usec)) != 19) {
-		fprintf(stderr,
-			"fscanf read too few entries from thread log file: %s\n",
-			child_log_file_name);
-		cleanup_exit();
-	}
-
-	/*
-	 * Close & remove the thread log file
-	 */
-	fclose(thread_log_fp);
-	unlink(child_log_file_name);
+	child_task->thread_stats.file_count = file_count;
+	child_task->thread_stats.files_per_sec = files_per_sec;
+	child_task->thread_stats.app_overhead_usec = app_overhead_usec;
+	child_task->thread_stats.min_creat_usec = min_creat_usec;
+	child_task->thread_stats.avg_creat_usec = creat_usec / num_files;
+	child_task->thread_stats.max_creat_usec = max_creat_usec;
+	child_task->thread_stats.min_write_usec = min_write_usec;
+	child_task->thread_stats.avg_write_usec = avg_write_usec / num_files;
+	child_task->thread_stats.max_write_usec = max_write_usec;
+	child_task->thread_stats.min_fsync_usec = min_fsync_usec;
+	child_task->thread_stats.avg_fsync_usec = fsync_usec / num_files;
+	child_task->thread_stats.max_fsync_usec = max_fsync_usec;
+	child_task->thread_stats.avg_sync_usec = avg_sync_usec;
+	child_task->thread_stats.min_close_usec= min_close_usec;
+	child_task->thread_stats.avg_close_usec = close_usec / num_files;
+	child_task->thread_stats.max_close_usec = max_close_usec;
+	child_task->thread_stats.min_unlink_usec = min_unlink_usec;
+	child_task->thread_stats.avg_unlink_usec = unlink_usec / num_files;
+	child_task->thread_stats.max_unlink_usec = max_unlink_usec;
 
 	return;
 }
@@ -1018,7 +944,7 @@ void aggregate_thread_stats(fs_mark_stat_t * thread_stats,
 	int i;
 
 	for (i = 0; i < num_threads; i++) {
-		process_child_log_file(child_tasks[i].child_pid, thread_stats);
+		thread_stats = &child_tasks[i].thread_stats;
 
 		/*
 		 * File count and files/second are simple additions
@@ -1133,8 +1059,6 @@ void thread_work(child_job_t *child_task)
 	setup(child_task);
 
 	do_run(child_task);
-
-	fclose(child_task->child_log_file_fp);
 }
 
 void *thread_function(void *p) 
@@ -1142,9 +1066,7 @@ void *thread_function(void *p)
 	child_job_t *child_task = (child_job_t *) p;
 	child_task->child_pid = (pid_t) __gettid();
 	child_task->names = NULL;
-#if 0	
-	printf("creating thread of pid: %ld\n", child_task->child_pid);
-#endif	
+
 	thread_work(child_task);
 	return NULL;
 }

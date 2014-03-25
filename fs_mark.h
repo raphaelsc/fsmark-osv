@@ -138,16 +138,6 @@ struct name_entry {
     char target_dir[MAX_NAME_PATH];	 	/* Name of directory when & if file is renamed */
 };
 
-typedef struct {
-	pid_t	child_pid;
-	char 	test_dir[PATH_MAX]; 		/* Directory name to use to create test files in */
-	FILE	*child_log_file_fp;
-	char	io_buffer[MAX_IO_BUFFER_SIZE];  /* Buffer used in writes to files */
-	struct name_entry *names;		/* Array of names & paths used in test  */
-	char rand_name[FILENAME_SIZE];
-	char seq_name[FILENAME_SIZE];
-} child_job_t;
-
 /*
  * Structure used to record statisitics on each run of files.
  */
@@ -199,6 +189,15 @@ typedef struct {
 	unsigned long long max_close_usec;
 } fs_mark_stat_t;
 
+typedef struct {
+        pid_t   child_pid;
+        char    test_dir[PATH_MAX];             /* Directory name to use to create test files in */
+        char    io_buffer[MAX_IO_BUFFER_SIZE];  /* Buffer used in writes to files */
+        struct name_entry *names;               /* Array of names & paths used in test  */
+        char rand_name[FILENAME_SIZE];
+        char seq_name[FILENAME_SIZE];
+        fs_mark_stat_t thread_stats;
+} child_job_t;
 
 /*
  * For each child, we need to track its pid and the directory that it is to run in
