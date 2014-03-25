@@ -21,7 +21,6 @@
  */
 
 /*
- * Copyright (C) 2014 Cloudius Systems
  * Raphael S. Carvalho <raphaelsc@cloudius-systems.com>:
  * Change fs_mark to use threads instead.
  */
