@@ -6,7 +6,7 @@ OSv was designed to run a single process, and that means a single address
 space. The problem is that fsmark uses fork when kicking off tasks, and given
 the OSv design decision mentioned above, fork semantics cannot be properly
 implemented. To get fsmark running properly in OSv, the code would have to be
-changed to use threads instead. Here borns fsmark-osv!
+changed to use threads instead. Here fsmark-osv is born!
 
 How to use fsmark-osv in OSv
 =====
